@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}Re-KYC queue · KYC Watch{% endblock %}
+{% block content %}
+<div class="portal-heading">
+  <div>
+    <div class="eyebrow">COMPLIANCE WORK QUEUE</div>
+    <h1>Re-KYC follow-up</h1>
+    <p class="subtitle">Schedule appointments and record renewed document expiry for each individual holder.</p>
+  </div>
+  <div class="queue-summary"><span><strong>{{ pending_count }}</strong> pending</span><span><strong>{{ scheduled_count }}</strong> scheduled</span></div>
+</div>
+<section class="section-card queue-card">
+  <div class="section-head">
+    <div>
+      <div class="section-title-line"><h2>Open re-KYC tasks</h2><span class="pill-count">{{ tasks|length }} records</span></div>
+      <p>Joint account holders appear separately because each holder has an independent KYC document.</p>
+    </div>
+    <form action="{{ url_for('scan') }}" method="post" class="queue-scan-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="warning_days" value="{{ warning_days }}">
+      <button class="button button-light" type="submit">⟳ Run expiry scan</button>
+    </form>
+  </div>
+  <form class="filters queue-filters" method="get" action="{{ url_for('rekyc_queue') }}">
+    <label class="search-box"><span>⌕</span><input name="q" value="{{ search }}" placeholder="Search name, account, customer ID" aria-label="Search re-KYC tasks"></label>
+    <label class="select-wrap"><span class="filter-label">BRANCH</span><select name="branch"><option value="">All branches</option>{% for item in branches %}<option value="{{ item.branch_name }}" {% if selected_branch == item.branch_name %}selected{% endif %}>{{ item.branch_name }}</option>{% endfor %}</select></label>
+    <label class="select-wrap"><span class="filter-label">STATUS</span><select name="status_filter"><option value="">All open</option><option value="PENDING" {% if selected_status == 'PENDING' %}selected{% endif %}>Pending</option><option value="SCHEDULED" {% if selected_status == 'SCHEDULED' %}selected{% endif %}>Scheduled</option></select></label>
+    <input type="hidden" name="warning_days" value="{{ warning_days }}">
+    <button class="button button-filter" type="submit">Filter</button>
+    {% if search or selected_branch or selected_status %}<a class="clear-link" href="{{ url_for('rekyc_queue') }}">Clear</a>{% endif %}
+  </form>
+  <div class="table-scroll">
+    <table class="queue-table">
+      <thead><tr><th>INDIVIDUAL HOLDER</th><th>BRANCH</th><th>IDENTITY PROOF</th><th>EXPIRY / RISK</th><th>RE-KYC STATUS</th><th class="align-right">ACTION</th></tr></thead>
+      <tbody>
+      {% for row in tasks %}
+        <tr>
+          <td><div class="customer-cell"><span class="customer-avatar avatar-{{ loop.index0 % 5 }}">{{ row.full_name[:1] }}{{ row.full_name.split()[-1][:1] if row.full_name.split()|length > 1 else '' }}</span><div><strong>{{ row.full_name }}</strong><span>{{ row.account_number }} <b>·</b> {{ row.customer_id }}</span></div></div></td>
+          <td><span class="branch-name">{{ row.branch }}</span></td>
+          <td><div class="doc-name">{{ row.document_type }}</div><div class="doc-number">{{ row.document_number }}</div></td>
+          <td><strong>{{ row.expiry_date or row.expiry_date_raw or 'Missing date' }}</strong><div class="expiry-note {% if row.kyc_status == 'EXPIRED' %}red-text{% elif row.kyc_status == 'EXPIRING_SOON' %}orange-text{% endif %}">{% if row.days_left is not none and row.days_left < 0 %}{{ row.days_left|abs }} days overdue{% elif row.days_left == 0 %}Expires today{% elif row.days_left is not none %}{{ row.days_left }} days left{% else %}Review required{% endif %}</div></td>
+          <td><span class="status status-{{ row.rekyc_status|lower }}"><i></i>{{ row.rekyc_status|replace('_', ' ')|title }}</span>{% if row.scheduled_for %}<div class="scheduled-note">Visit {{ row.scheduled_for }}</div>{% endif %}{% if row.assigned_officer %}<div class="scheduled-note">Officer {{ row.assigned_officer }}</div>{% endif %}</td>
+          <td class="align-right"><div class="queue-row-actions">
+            {% if row.rekyc_status == 'SCHEDULED' %}
+              <form class="complete-inline" method="post" action="{{ url_for('complete_task', task_id=row.rekyc_id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="date" name="new_expiry_date" required aria-label="Renewed document expiry"><button class="text-action complete-action" type="submit">Complete</button></form>
+            {% else %}
+              <form class="schedule-inline" method="post" action="{{ url_for('schedule_task', task_id=row.rekyc_id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="date" name="scheduled_date" aria-label="Appointment date"><button class="text-action" type="submit">Schedule</button></form>
+            {% endif %}
+          </div></td>
+        </tr>
+      {% else %}
+        <tr><td colspan="6"><div class="empty-state"><span>✓</span><strong>No matching open re-KYC tasks</strong><p>Try clearing filters or run an expiry scan to refresh the queue.</p></div></td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="table-foot"><span>Showing <strong>{{ tasks|length }}</strong> open holder record{{ '' if tasks|length == 1 else 's' }}</span><span>Expiry warning window <strong>· {{ warning_days }} days</strong></span></div>
+</section>
+<div class="data-note"><span>ⓘ</span><span>Completing re-KYC requires the renewed document expiry date; the identity document itself should be verified according to your institution’s process.</span></div>
+{% endblock %}

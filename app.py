@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import csv
 import io
 import os
@@ -10,7 +11,7 @@ from functools import wraps
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
-from fastapi import Depends, FastAPI, Form, HTTPException, Query, Request, status
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Request, UploadFile, status
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from fastapi.staticfiles import StaticFiles
@@ -21,6 +22,7 @@ from pymongo.errors import DuplicateKeyError
 from starlette.middleware.sessions import SessionMiddleware
 
 from database import get_database, initialize_database
+from id_photo_scan import ALLOWED_IMAGE_TYPES, MAX_IMAGE_BYTES, PhotoScanError, scan_id_photo
 from models import CustomerCreate, CustomerPage, RekycCompleteRequest, RekycScheduleRequest, TokenResponse
 from security import SECRET_KEY, create_access_token, decode_access_token, verify_password
 from services import (
@@ -417,6 +419,47 @@ def dashboard(
     })
 
 
+@app.get("/queue", response_class=HTMLResponse, name="rekyc_queue")
+def rekyc_queue(
+    request: Request,
+    db: Annotated[Database, Depends(get_db)],
+    warning_days: str = str(DEFAULT_WARNING_DAYS),
+    branch: str = "",
+    status_filter: str = "",
+    q: str = "",
+):
+    if session_required(request, db) is None:
+        return RedirectResponse("/login", status_code=303)
+    warning = safe_warning_days(warning_days)
+    scan_expiring_kyc(db, warning)
+    refresh_kyc_statuses(db, warning)
+    all_rows = kyc_view_rows(db, warning)
+    tasks = [row for row in all_rows if row["rekyc_status"] in {"PENDING", "SCHEDULED"}]
+    if branch:
+        tasks = [row for row in tasks if row["branch"] == branch]
+    if status_filter in {"PENDING", "SCHEDULED"}:
+        tasks = [row for row in tasks if row["rekyc_status"] == status_filter]
+    if q:
+        needle = q.casefold()
+        tasks = [row for row in tasks if any(
+            needle in str(row.get(key, "")).casefold()
+            for key in ("full_name", "account_number", "customer_id", "branch")
+        )]
+    branches = list(db.branches.find({}, {"_id": 0}).sort("branch_name", 1))
+    return render_page(request, "queue.html", db, {
+        "tasks": tasks,
+        "branches": branches,
+        "selected_branch": branch,
+        "selected_status": status_filter,
+        "search": q,
+        "warning_days": warning,
+        "warning_options": WARNING_DAY_OPTIONS,
+        "pending_count": db.rekyc_records.count_documents({"status": "PENDING"}),
+        "scheduled_count": db.rekyc_records.count_documents({"status": "SCHEDULED"}),
+        "pending": db.rekyc_records.count_documents({"status": {"$in": ["PENDING", "SCHEDULED"]}}),
+    })
+
+
 @app.get("/data", response_class=HTMLResponse, name="customer_data")
 def customer_data(request: Request, db: Annotated[Database, Depends(get_db)], q: str = ""):
     if session_required(request, db) is None:
@@ -427,6 +470,30 @@ def customer_data(request: Request, db: Annotated[Database, Depends(get_db)], q:
         needle = q.casefold()
         records = [row for row in records if any(needle in str(row.get(key, "")).casefold() for key in ("full_name", "account_number", "customer_id", "branch", "document_type"))]
     return render_page(request, "customer_data.html", db, {"records": records, "search": q})
+
+
+@app.post("/id-photo/scan", name="scan_id_photo")
+async def scan_uploaded_id_photo(
+    request: Request,
+    db: Annotated[Database, Depends(get_db)],
+    photo: Annotated[UploadFile, File()],
+    submitted_csrf: Annotated[str, Form(alias="csrf_token")],
+):
+    """Extract suggested fields from an ID photo without storing its image."""
+    if session_required(request, db) is None:
+        raise HTTPException(status_code=401, detail="Administrator sign-in is required.")
+    verify_csrf(request, submitted_csrf)
+    if photo.content_type not in ALLOWED_IMAGE_TYPES:
+        await photo.close()
+        raise HTTPException(status_code=400, detail="Upload a JPEG, PNG, or WebP image.")
+    image_bytes = await photo.read(MAX_IMAGE_BYTES + 1)
+    await photo.close()
+    try:
+        return await asyncio.to_thread(scan_id_photo, image_bytes)
+    except PhotoScanError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    except RuntimeError as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
 
 
 @app.get("/admin", response_class=HTMLResponse, name="admin_dashboard")

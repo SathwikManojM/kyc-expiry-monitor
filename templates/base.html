@@ -16,11 +16,11 @@
   <aside class="sidebar">
     <a class="brand" href="{{ url_for('dashboard') }}"><span class="brand-mark">K</span><span>KYC<span class="brand-muted">WATCH</span></span></a>
     <div class="side-label">WORKSPACE</div>
-    <a class="nav-link active" href="{{ url_for('dashboard') }}"><span class="nav-icon">◫</span> Overview</a>
-    <a class="nav-link" href="{{ url_for('customer_data') }}"><span class="nav-icon">▤</span> Customer data</a>
-    <a class="nav-link" href="{{ url_for('dashboard') }}#pending"><span class="nav-icon">◎</span> Re-KYC queue <span class="nav-count">{{ pending|default('', true) }}</span></a>
-    <a class="nav-link" href="{{ url_for('branch_report') }}"><span class="nav-icon">⌂</span> Branch report</a>
-    {% if current_user.is_admin %}<a class="nav-link" href="{{ url_for('admin_dashboard') }}"><span class="nav-icon">⚙</span> Admin</a>{% endif %}
+    <a class="nav-link {% if request.url.path == '/' %}active{% endif %}" href="{{ url_for('dashboard') }}" {% if request.url.path == '/' %}aria-current="page"{% endif %}><span class="nav-icon">◫</span> Overview</a>
+    <a class="nav-link {% if request.url.path == '/data' %}active{% endif %}" href="{{ url_for('customer_data') }}" {% if request.url.path == '/data' %}aria-current="page"{% endif %}><span class="nav-icon">▤</span> Customer data</a>
+    <a class="nav-link {% if request.url.path == '/queue' %}active{% endif %}" href="{{ url_for('rekyc_queue') }}" {% if request.url.path == '/queue' %}aria-current="page"{% endif %}><span class="nav-icon">◎</span> Re-KYC queue <span class="nav-count">{{ pending|default('', true) }}</span></a>
+    <a class="nav-link {% if request.url.path == '/reports' %}active{% endif %}" href="{{ url_for('branch_report') }}" {% if request.url.path == '/reports' %}aria-current="page"{% endif %}><span class="nav-icon">⌂</span> Branch report</a>
+    {% if current_user.role == 'admin' %}<a class="nav-link {% if request.url.path == '/admin' %}active{% endif %}" href="{{ url_for('admin_dashboard') }}" {% if request.url.path == '/admin' %}aria-current="page"{% endif %}><span class="nav-icon">⚙</span> Admin</a>{% endif %}
     <div class="side-bottom"><div class="shield">✓</div><strong>Compliance desk</strong><p>Monitor expiring proofs and keep every customer record current.</p><span class="env-tag">DEMO ENVIRONMENT</span></div>
   </aside>
   <main class="main-shell">

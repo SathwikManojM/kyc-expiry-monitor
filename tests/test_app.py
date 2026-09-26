@@ -1,3 +1,5 @@
+import io
+import os
 import re
 import sqlite3
 import tempfile
@@ -6,12 +8,15 @@ from datetime import date, timedelta
 from pathlib import Path
 from unittest.mock import patch
 
+from PIL import Image, ImageDraw, ImageFont
+
 import mongomock
 from fastapi.testclient import TestClient
 
 import app as kyc_app
 import database
 from migrate_sqlite import migrate
+from id_photo_scan import extract_id_fields, scan_id_photo
 from security import hash_password, verify_password
 from services import calculate_kyc_status, parse_master_date, refresh_data_quality_issues, scan_expiring_kyc
 
@@ -77,6 +82,17 @@ class KycMonitorTests(unittest.TestCase):
             self.assertIn(title, response.content)
         self.assertEqual(self.client.get("/data").status_code, 200)
         self.assertEqual(self.client.get("/admin").status_code, 200)
+
+    def test_sidebar_highlight_follows_each_page_route(self):
+        for path in ("/", "/data", "/queue", "/reports", "/admin"):
+            with self.subTest(path=path):
+                response = self.client.get(path)
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.text.count('class="nav-link active"'), 1)
+                self.assertEqual(response.text.count('aria-current="page"'), 1)
+                if path == "/queue":
+                    self.assertIn("Re-KYC follow-up", response.text)
+                    self.assertIn("Open re-KYC tasks", response.text)
 
     def test_joint_holders_keep_separate_kyc_documents_and_expiry_dates(self):
         holders = list(self.db.customers.find({"account_numbers": "AC-204819"}))
@@ -158,6 +174,112 @@ class KycMonitorTests(unittest.TestCase):
         response = self.client.post("/scan", data={"csrf_token": "wrong", "warning_days": "60"})
         self.assertEqual(response.status_code, 400)
 
+    def test_id_photo_ocr_extracts_labeled_fields_without_returning_raw_text(self):
+        fields = extract_id_fields("""PASSPORT
+Name: Jordan Sample
+Passport No: X1234567
+Date of Birth: 12/04/1990
+Date of Issue: 05/06/2020
+Date of Expiry: 05/06/2030
+""")
+        self.assertEqual(fields["full_name"], "Jordan Sample")
+        self.assertEqual(fields["dob_text"], "1990-04-12")
+        self.assertEqual(fields["document_type"], "Passport")
+        self.assertEqual(fields["document_number"], "X1234567")
+        self.assertEqual(fields["expiry_date"], "2030-06-05")
+        self.assertNotIn("raw_text", fields)
+
+    def test_id_photo_ocr_accepts_labeled_synthetic_demo_card(self):
+        fields = extract_id_fields("""KYC TEST RECORD - SOFTWARE DEMO - FICTIONAL
+Name: Aarav Malik
+Date of Birth: 05/11/1995
+Document Type: SYNTHETIC ID CARD
+Document No: DEMO-0001-330
+Issue Date: 17/02/2022
+Expiry Date: 17/02/2027
+SAMPLE - NOT A REAL ID
+""")
+        self.assertEqual(fields["full_name"], "Aarav Malik")
+        self.assertEqual(fields["dob_text"], "1995-11-05")
+        self.assertEqual(fields["document_type"], "SYNTHETIC ID CARD")
+        self.assertEqual(fields["document_number"], "DEMO-0001-330")
+        self.assertEqual(fields["issue_date"], "2022-02-17")
+        self.assertEqual(fields["expiry_date"], "2027-02-17")
+
+    def test_real_tesseract_reads_diagonal_sample_watermark(self):
+        tesseract = os.environ.get("TESSERACT_CMD", r"C:\Program Files\Tesseract-OCR\tesseract.exe")
+        if not Path(tesseract).is_file():
+            self.skipTest("Tesseract OCR engine is not installed")
+        image_stream = io.BytesIO()
+        image = Image.new("RGB", (1000, 480), "white")
+        draw = ImageDraw.Draw(image)
+        font = ImageFont.truetype(r"C:\Windows\Fonts\arialbd.ttf", 34)
+        for index, text in enumerate((
+            "KYC TEST RECORD - SOFTWARE DEMO FICTIONAL", "Name: Aarav Malik",
+            "Date of Birth: 05/11/1995", "Document Type: SYNTHETIC ID CARD",
+            "Document No: DEMO-0001-330", "Issue Date: 17/02/2022", "Expiry Date: 17/02/2027",
+        )):
+            draw.text((55, 25 + index * 61), text, fill="black", font=font)
+        watermark = Image.new("RGBA", (850, 100), (0, 0, 0, 0))
+        watermark_draw = ImageDraw.Draw(watermark)
+        watermark_draw.text((8, 4), "SAMPLE - NOT A REAL ID", font=font, fill=(120, 120, 120, 72))
+        watermark = watermark.rotate(22, expand=True)
+        image = image.convert("RGBA")
+        image.alpha_composite(watermark, (80, 120))
+        image.convert("RGB").save(image_stream, format="PNG")
+
+        with patch.dict(os.environ, {"TESSERACT_CMD": ""}):
+            result = scan_id_photo(image_stream.getvalue())
+        self.assertEqual(result["fields"]["full_name"], "Aarav Malik")
+        self.assertEqual(result["fields"]["document_type"], "SYNTHETIC ID CARD")
+        self.assertEqual(result["fields"]["document_number"], "DEMO-0001-330")
+        self.assertEqual(result["fields"]["expiry_date"], "2027-02-17")
+
+    def test_photo_scan_requires_admin_csrf_and_valid_image(self):
+        anonymous = TestClient(kyc_app.app)
+        with anonymous:
+            response = anonymous.post(
+                "/id-photo/scan", data={"csrf_token": "any"},
+                files={"photo": ("id.png", b"not an image", "image/png")},
+            )
+            self.assertEqual(response.status_code, 401)
+
+        page = self.client.get("/data")
+        csrf_token = re.search(r'name="csrf_token" value="([^"]+)"', page.text).group(1)
+        response = self.client.post(
+            "/id-photo/scan",
+            data={"csrf_token": csrf_token},
+            files={"photo": ("id.png", b"not an image", "image/png")},
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_photo_scan_returns_suggestions_from_ephemeral_upload(self):
+        image_stream = io.BytesIO()
+        Image.new("RGB", (64, 40), color="white").save(image_stream, format="PNG")
+        page = self.client.get("/data")
+        csrf_token = re.search(r'name="csrf_token" value="([^"]+)"', page.text).group(1)
+        with patch(
+            "pytesseract.image_to_string",
+            return_value="Passport\nName: Jordan Sample\nDate of Birth: 12/04/1990\nDate of Expiry: 05/06/2030",
+        ):
+            response = self.client.post(
+                "/id-photo/scan",
+                data={"csrf_token": csrf_token},
+                files={"photo": ("id.png", image_stream.getvalue(), "image/png")},
+            )
+        self.assertEqual(response.status_code, 200)
+        result = response.json()
+        self.assertEqual(result["fields"]["full_name"], "Jordan Sample")
+        self.assertEqual(result["fields"]["expiry_date"], "2030-06-05")
+        self.assertTrue(result["review_required"])
+        self.assertNotIn("recognized_text", result)
+
+        response = self.client.post(
+            "/id-photo/scan", data={"csrf_token": "invalid"},
+            files={"photo": ("id.png", b"not an image", "image/png")},
+        )
+        self.assertEqual(response.status_code, 400)
+
     def test_status_logic_prioritizes_task_state_and_warning_window(self):
         expiry = date.today() + timedelta(days=10)
         kyc = {"expiry_date": expiry, "kyc_date": date.today()}
@@ -167,6 +289,7 @@ class KycMonitorTests(unittest.TestCase):
         self.assertEqual(calculate_kyc_status({"expiry_date": None, "kyc_date": None}, None, 30), "MISSING_DATA")
 
     def test_sqlite_migration_preserves_joint_holders_and_flags_absent_kyc_dates(self):
+        migration_db = mongomock.MongoClient(tz_aware=True)["isolated_migration_test"]
         with tempfile.TemporaryDirectory() as temp_dir:
             source = Path(temp_dir) / "legacy.db"
             legacy = sqlite3.connect(source)
@@ -202,14 +325,18 @@ class KycMonitorTests(unittest.TestCase):
             legacy.commit()
             legacy.close()
 
-            imported = migrate(source)
+            database.set_test_database(migration_db)
+            try:
+                imported = migrate(source)
+            finally:
+                database.set_test_database(self.db)
 
         self.assertEqual(imported, (2, 2, 1))
-        account = self.db.accounts.find_one({"account_number": "ACC-LEGACY"})
+        account = migration_db.accounts.find_one({"account_number": "ACC-LEGACY"})
         self.assertTrue(account["joint_account"])
         self.assertEqual(set(account["holder_ids"]), {"LEG-1", "LEG-2"})
-        self.assertIsNone(self.db.kyc_records.find_one({"kyc_id": "KYC-LEGACY-11"})["kyc_date"])
-        self.assertEqual(self.db.rekyc_records.find_one({"rekyc_id": "RK-LEGACY-21"})["status"], "SCHEDULED")
+        self.assertIsNone(migration_db.kyc_records.find_one({"kyc_id": "KYC-LEGACY-11"})["kyc_date"])
+        self.assertEqual(migration_db.rekyc_records.find_one({"rekyc_id": "RK-LEGACY-21"})["status"], "SCHEDULED")
 
 
 if __name__ == "__main__":

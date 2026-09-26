@@ -19,6 +19,7 @@ KYC Watch is an admin/compliance-officer-only application for tracking customer-
 - Dashboard summaries, branch pending chart, upcoming/expired worklists, joint-account holder view, and data-quality review.
 - Filterable branch report and CSV export.
 - Customer search, account-linked customer data, task scheduling/completion, and idempotent expiry scans.
+- Optional ID-photo upload with local OCR suggestions to prefill holder/document fields. The application does not retain uploaded photos; staff must verify every extracted value. Multipart parsing may use temporary buffering.
 - Pydantic request validation, pagination, and REST API documentation at `/docs`.
 
 ## Setup (Windows PowerShell)
@@ -49,6 +50,16 @@ $env:KYC_EXPIRY_WARNING_DAYS = "60"
 ```
 
 For Atlas, set `MONGODB_URI` to the connection string from your Atlas deployment instead. Keep credentials out of source control and use a database user with only the required database permissions.
+
+### Optional: enable ID-photo OCR
+
+The photo scanner requires the Tesseract OCR executable in addition to the Python packages. On Windows, install the Tesseract OCR engine using your approved package source/installer, then restart the app. If it is not on `PATH`, set its executable path before starting:
+
+```powershell
+$env:TESSERACT_CMD = "C:\Program Files\Tesseract-OCR\tesseract.exe"
+```
+
+In **Customer data → Add customer**, choose or capture a JPEG, PNG, or WebP image up to 5 MB and select **Upload & scan**. OCR only returns suggested name/type/number/date fields; it does not decide whether an identity document is genuine or valid. Check each value against the image before saving. The application does not persist the photo or OCR text. The multipart parser may temporarily buffer an upload and discards it when the request closes. This demo should not be used to process real identity documents.
 
 ### 3. Create the administrator
 

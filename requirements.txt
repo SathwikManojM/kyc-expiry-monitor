@@ -6,3 +6,5 @@ python-multipart>=0.0.9,<1.0
 python-jose[cryptography]>=3.3,<4.0
 pwdlib[argon2]>=0.2,<1.0
 itsdangerous>=2.2,<3.0
+pillow>=10.4,<12.0
+pytesseract>=0.3.13,<1.0
