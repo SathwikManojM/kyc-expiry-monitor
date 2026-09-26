@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}KYC Watch · Branch compliance{% endblock %}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', path='styles.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', path='portal.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', path='compliance.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', path='workflow.css') }}">
+</head>
+<body>
+  <aside class="sidebar">
+    <a class="brand" href="{{ url_for('dashboard') }}"><span class="brand-mark">K</span><span>KYC<span class="brand-muted">WATCH</span></span></a>
+    <div class="side-label">WORKSPACE</div>
+    <a class="nav-link active" href="{{ url_for('dashboard') }}"><span class="nav-icon">◫</span> Overview</a>
+    <a class="nav-link" href="{{ url_for('customer_data') }}"><span class="nav-icon">▤</span> Customer data</a>
+    <a class="nav-link" href="{{ url_for('dashboard') }}#pending"><span class="nav-icon">◎</span> Re-KYC queue <span class="nav-count">{{ pending|default('', true) }}</span></a>
+    <a class="nav-link" href="{{ url_for('branch_report') }}"><span class="nav-icon">⌂</span> Branch report</a>
+    {% if current_user.is_admin %}<a class="nav-link" href="{{ url_for('admin_dashboard') }}"><span class="nav-icon">⚙</span> Admin</a>{% endif %}
+    <div class="side-bottom"><div class="shield">✓</div><strong>Compliance desk</strong><p>Monitor expiring proofs and keep every customer record current.</p><span class="env-tag">DEMO ENVIRONMENT</span></div>
+  </aside>
+  <main class="main-shell">
+    <header class="topbar"><div class="crumb">Operations <span>/</span> <strong>KYC monitoring</strong></div><div class="top-right"><span class="live-dot"></span> Workspace <span class="top-divider"></span><div class="avatar">{{ current_user.name[:1]|upper }}</div><span class="admin-label">{{ current_user.name }} · {{ current_user.role|title }}</span><form class="logout-form" action="{{ url_for('logout') }}" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="logout-button" type="submit">Sign out</button></form></div></header>
+    <section class="page-content">
+      {% with messages = get_flashed_messages(with_categories=true) %}{% if messages %}<div class="flash-stack">{% for category, message in messages %}<div class="flash {{ category }}">{{ message }}<button type="button" class="flash-close" aria-label="Dismiss">×</button></div>{% endfor %}</div>{% endif %}{% endwith %}
+      {% block content %}{% endblock %}
+    </section>
+    <footer>Internal compliance workspace <span>•</span> Demo data only — do not enter real customer information</footer>
+  </main>
+  <script src="{{ url_for('static', path='app.js') }}"></script>
+</body>
+</html>

@@ -1,0 +1,12 @@
+{% extends "auth_base.html" %}
+{% block title %}Sign in · KYC Watch{% endblock %}
+{% block auth_content %}
+<div class="auth-heading"><div class="auth-eyebrow">ADMINISTRATOR ACCESS</div><h2>Sign in to your workspace</h2><p>Authorized compliance administrators only.</p></div>
+<form class="auth-form" method="post" action="{{ url_for('login') }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <label>Administrator username<input type="text" name="username" required autocomplete="username" placeholder="Admin username"></label>
+  <label>Password<input type="password" name="password" required autocomplete="current-password" placeholder="Enter your password"></label>
+  <button class="auth-submit" type="submit">Sign in <span>→</span></button>
+</form>
+<p class="auth-switch">No public registration. To create the first administrator, run <code>python admin_cli.py create-admin --username compliance-admin</code> in the project terminal.</p>
+{% endblock %}

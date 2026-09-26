@@ -1,0 +1,4 @@
+.complete-inline{display:flex;align-items:center;gap:5px}.complete-inline input{width:112px;height:27px;border:1px solid #e4e9ef;border-radius:5px;padding:0 5px;color:#62738a;font:9px 'DM Sans',sans-serif}.status-expired{color:#d44f5d;background:#fff0f1}.status-expiring_soon{color:#c9842d;background:#fff5e8}.status-missing_data{color:#b94350;background:#fff0f1}.status-re_kyc_scheduled{color:#5576cb;background:#eef3ff}.status-re_kyc_completed{color:#16816a;background:#e8f7f1}
+.auth-switch code{display:block;margin:9px auto;color:#315fc4;font-size:9px;white-space:normal;overflow-wrap:anywhere}
+@media(max-width:850px){.complete-inline input{width:98px}}
+@media(max-width:560px){.complete-inline input{width:90px}}

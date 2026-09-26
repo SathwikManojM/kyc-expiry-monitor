@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}KYC Watch · Secure workspace{% endblock %}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', path='portal.css') }}">
+</head>
+<body class="auth-page">
+  <main class="auth-layout">
+    <section class="auth-card">
+      <a class="auth-brand" href="{{ url_for('login') }}"><span class="auth-brand-mark">K</span><span>KYC<span>WATCH</span></span></a>
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}<div class="auth-flashes">{% for category, message in messages %}<div class="auth-flash {{ category }}">{{ message }}</div>{% endfor %}</div>{% endif %}
+      {% endwith %}
+      {% block auth_content %}{% endblock %}
+      <div class="auth-security"><span>✓</span> Passwords are securely hashed before storage.</div>
+    </section>
+    <aside class="auth-aside">
+      <div class="aside-orb orb-one"></div><div class="aside-orb orb-two"></div>
+      <div class="aside-content"><div class="aside-kicker">COMPLIANCE WORKSPACE</div><h1>Keep every<br>record in view.</h1><p>Track document expiry, coordinate re-KYC follow-up, and review branch activity in one secure demo workspace.</p><div class="aside-feature"><span>01</span><div><strong>Customer-level visibility</strong><small>Separate KYC timelines, including joint holders.</small></div></div><div class="aside-feature"><span>02</span><div><strong>Admin-only controls</strong><small>Protected dashboard, reports, and compliance APIs.</small></div></div><div class="aside-demo">DEMO DATA ONLY · DO NOT ENTER REAL CUSTOMER INFORMATION</div></div>
+    </aside>
+  </main>
+</body>
+</html>
